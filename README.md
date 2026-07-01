@@ -25,3 +25,29 @@ The `vgamepad` library relies on the ViGEmBus driver to emulate the Xbox control
 Install the required libraries using `pip`:
 ```bash
 pip install pyserial vgamepad
+How to Use
+1. Find your RC COM Port
+Connect your DJI RC-N1 controller via USB to your PC and turn it on.
+
+Open the Windows Device Manager (Geräte-Manager).
+
+Expand Ports (COM & LPT) (Anschlüsse) and note down the COM port number (e.g., COM5 or COM6).
+
+2. Run the Script
+Navigate to your project directory in PowerShell or Command Prompt and run the script by passing your COM port via the -p flag:
+
+Bash
+python main.py -p COM6
+(Replace COM6 with your actual COM port).
+
+3. Verify the Controller
+Press Win + R, type joy.cpl and press Enter.
+
+You should see an Xbox 360 Controller listed. Click on Properties to test the stick movements and buttons live.
+
+Keep the script running in the background and launch your simulator (e.g., Liftoff, VelociDrone, DJI Virtual Flight).
+
+Credits and License
+Original Project: Based on the reverse-engineered DJI DUML packet parser from DjiMini2RCasJoystick-master.
+
+License: This project is licensed under the Apache License 2.0. See the LICENSE file for details.
