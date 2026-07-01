@@ -32,7 +32,7 @@ pip install pyserial vgamepad
 ## How to Use
 
 ### 1. Find your RC COM Port
-1. Connect your DJI RC-N1 controller via USB to your PC and turn it on.
+1. Connect your DJI RC-N1 controller via USB to your PC and turn it on. IMPORTANT! Bottom Port
 2. Open the Windows **Device Manager** (Geräte-Manager).
 3. Expand **Ports (COM & LPT)** (Anschlüsse) and note down the COM port number (e.g., `COM5` or `COM6`).
 
