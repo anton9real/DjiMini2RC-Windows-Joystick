@@ -34,7 +34,7 @@ pip install pyserial vgamepad
 ### 1. Find your RC COM Port
 1. Connect your DJI RC-N1 controller via USB to your PC and turn it on. IMPORTANT! Bottom Port
 2. Open the Windows **Device Manager** (Geräte-Manager).
-3. Expand **Ports (COM & LPT)** (Anschlüsse) and note down the COM port number (e.g., `COM5` or `COM6`).
+3. Expand **Ports (COM & LPT)** and note down the COM port number (e.g., `COM5` or `COM6`).
 
 ### 2. Run the Script
 Navigate to your project directory in PowerShell or Command Prompt and run the script by passing your COM port via the `-p` flag:
@@ -43,13 +43,6 @@ Navigate to your project directory in PowerShell or Command Prompt and run the s
 python main.py -p COM6
 ```
 *(Replace `COM6` with your actual COM port).*
-
-### 3. Verify the Controller
-1. Press `Win + R`, type `joy.cpl` and press Enter.
-2. You should see an **Xbox 360 Controller** listed. Click on **Properties** to test the stick movements and buttons live.
-3. Keep the script running in the background and launch your simulator (e.g., Liftoff, VelociDrone, DJI Virtual Flight).
-
----
 
 ## Credits and License
 
