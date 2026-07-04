@@ -8,10 +8,11 @@ from threading import Thread
 parser = argparse.ArgumentParser(description='DJI Mini 2 RC (also known as RC-N1, RCS231, WM161b-RC-N1, RCN1) <-> Windows joystick interface (vgamepad)')
 
 parser.add_argument('-p', '--port', help='RC Serial Port', required=True)
+parser.add_argument('-d', '--debug', action='store_true', help='Print raw packet hex data for debugging button mapping')
 
 args = parser.parse_args()
 
-# Initialisiere den virtuellen Xbox 360 Controller für Windows
+# Initialize the virtual Xbox 360 controller for Windows
 device = vg.VX360Gamepad()
 time.sleep(1)
 
@@ -113,7 +114,7 @@ def send_duml(s, source, target, cmd_type, cmd_set, cmd_id, payload = None):
 
 # Open serial.
 try:
-    s = serial.Serial(port=args.port, baudrate=115200)
+    s = serial.Serial(port=args.port, baudrate=115200, timeout=0.1)
     print('Opened serial device:', s.name)
 except serial.SerialException as e:
     print('Could not open serial device:', e)
@@ -125,23 +126,23 @@ def parseInput(input, name):
     output = (int.from_bytes(input, byteorder='little') - 364) * 4096 // 165
     return output
 
-# Status-Dictionary für die Achsen und Buttons
+# Status dictionary for axes and buttons
 st = {"rh": 0, "rv": 0, "lh": 0, "lv": 0, "b1": 0, "b2": 0, "b3": 0, "b4": 0, "t1": 0}
 
-# Hilfsfunktion zur Umrechnung von (0 bis 32768) in den Xbox-Bereich (-32768 bis 32767)
+# Helper function to scale from (0 to 32768) to the Xbox range (-32768 to 32767)
 def scale_to_xbox(val):
     scaled = int((val / 32768.0) * 65535 - 32768)
     return max(-32768, min(32767, scaled))
 
 def threaded_function():
     while(True):
-        time.sleep(0.02)  # 50Hz Updaterate für flüssige Steuerung
+        time.sleep(0.02)  # 50Hz update rate for smooth control
         
-        # Analog-Sticks updaten (Korrektur: left_joystick / right_joystick)
+        # Update analog sticks
         device.left_joystick(x_value=scale_to_xbox(st["lh"]), y_value=scale_to_xbox(st["lv"]))
         device.right_joystick(x_value=scale_to_xbox(st["rh"]), y_value=scale_to_xbox(st["rv"]))
         
-        # Schultertanten (Triggers) mappen
+        # Map triggers
         if st['t1'] > 0:
             device.right_trigger(value=255)
             device.left_trigger(value=0)
@@ -152,7 +153,7 @@ def threaded_function():
             device.left_trigger(value=0)
             device.right_trigger(value=0)
 
-        # Buttons mappen (Xbox-Layout)
+        # Map buttons (Xbox layout)
         if st['b1']: device.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_A)
         else: device.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_A)
         
@@ -165,61 +166,114 @@ def threaded_function():
         if st['b4']: device.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_Y)
         else: device.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_Y)
 
-        # Zustand an das Windows-System senden
+        # Send state to the Windows system
         device.update()
 
 thread = Thread(target = threaded_function, args = ())
-thread.daemon = True # Thread wird sauber beendet, wenn das Skript stoppt
+thread.daemon = True  # Thread exits cleanly when the script stops
 thread.start()
 
 try:
-    # Simulator-Modus auf der DJI Fernsteuerung aktivieren
+    # Enable simulator mode on the DJI remote controller
     send_duml(s, 0x0a, 0x06, 0x40, 0x06, 0x24, bytearray.fromhex('01'))
 
     while True:
         send_duml(s, 0x0a, 0x06, 0x40, 0x06, 0x01, bytearray.fromhex(''))
         send_duml(s, 0x0a, 0x06, 0x40, 0x06, 0x27, bytearray.fromhex(''))
 
-        buffer = bytearray.fromhex('')
-        while True:
-            b = s.read(1)
-            if b == bytearray.fromhex('55'):
-                buffer.extend(b)
-                ph = s.read(2)
-                buffer.extend(ph)
-                ph = struct.unpack('<H', ph)[0]
-                pl = 0b0000001111111111 & ph
-                pv = 0b1111110000000000 & ph
-                pv = pv >> 10
-                pc = s.read(1)
-                buffer.extend(pc)
-                pd = s.read(pl - 4)
-                buffer.extend(pd)
-                break
-            else:
-                break
-        data = buffer
-        if len(data) == 58:
-            pass
+        # Read up to 2 response packets (one for sticks, one for buttons)
+        for _pkt in range(2):
+            buffer = bytearray()
 
-        if len(data) == 38:
-            st["rh"] = parseInput(data[13:15], 'lv')
-            st["rv"] = parseInput(data[16:18], 'lh')
-            st["lv"] = parseInput(data[19:21], 'rv')
-            st["lh"] = parseInput(data[22:24], 'rh')
-            camera = parseInput(data[25:27], 'cam')
+            # Scan for packet start marker (0x55), skipping stale/junk bytes
+            header_found = False
+            for _ in range(64):
+                b = s.read(1)
+                if len(b) == 0:
+                    break  # Timeout, no more data available
+                if b[0] == 0x55:
+                    buffer.append(0x55)
+                    header_found = True
+                    break
 
-        if len(data) == 58:
-            bytes = data[28:30]
-            ival = int.from_bytes(bytes, byteorder="big")
-            st['b1'] = 1 if ival & 0x1060 == 0x1060 else 0
-            st['b2'] = 1 if ival & 0x1080 == 0x1080 else 0
-            st['b3'] = 1 if ival & 0x1004 == 0x1004 else 0
-            st['b4'] = 1 if ival & 0x1002 == 0x1002 else 0
+            if not header_found:
+                continue
 
-            bytes2 = data[27:29]
-            ival2 = int.from_bytes(bytes2, byteorder="big")
-            st['t1'] = 32767 if ival2 == 0x0 else -32767 if ival2 & 0x20 == 0x20 else 0
+            # Read length + version (2 bytes)
+            ph = s.read(2)
+            if len(ph) < 2:
+                continue
+            buffer.extend(ph)
+            ph_val = struct.unpack('<H', ph)[0]
+            pl = ph_val & 0x03FF  # Packet length from lower 10 bits
+
+            # Read header CRC (1 byte)
+            pc = s.read(1)
+            if len(pc) < 1:
+                continue
+            buffer.extend(pc)
+
+            # Read remaining packet data (pl total - 4 bytes already read)
+            remaining = pl - 4
+            if remaining <= 0 or remaining > 252:
+                continue
+            pd = s.read(remaining)
+            if len(pd) < remaining:
+                continue
+            buffer.extend(pd)
+
+            data = buffer
+
+            # Debug output for packet inspection
+            if args.debug and len(data) in (38, 58):
+                payload_hex = ' '.join(f'{b:02X}' for b in data[11:-2])
+                print(f'[DEBUG] {len(data)}-byte payload: {payload_hex}')
+                if len(data) == 58:
+                    print(f'[DEBUG]   Key bytes: [27]=0x{data[27]:02X} [28]=0x{data[28]:02X} [29]=0x{data[29]:02X} [30]=0x{data[30]:02X}')
+
+            # Parse stick data from 38-byte packets
+            if len(data) == 38:
+                st["rh"] = parseInput(data[13:15], 'rh')
+                st["rv"] = parseInput(data[16:18], 'rv')
+                st["lv"] = parseInput(data[19:21], 'lv')
+                st["lh"] = parseInput(data[22:24], 'lh')
+                camera = parseInput(data[25:27], 'cam')
+
+            # Parse button and trigger data from 58-byte packets
+            if len(data) == 58:
+                # FIX: Old code used compound masks (e.g. 0x1060) that required
+                # byte 28 to have 0x10 set. If byte 28's idle state didn't include
+                # that bit, no buttons would ever register.
+                # New: check only the actual button bits in byte 29.
+                btn_byte = data[29]
+                st['b1'] = 1 if btn_byte & 0x60 == 0x60 else 0  # Bits 6+5
+                st['b2'] = 1 if btn_byte & 0x80 else 0           # Bit 7
+                st['b3'] = 1 if btn_byte & 0x04 else 0           # Bit 2
+                st['b4'] = 1 if btn_byte & 0x02 else 0           # Bit 1
+
+                # FIX: Old code read bytes 27-29 with big-endian (overlapping
+                # with button bytes!) and treated ival2==0x0 as "right trigger
+                # full" — misidentifying idle state as a trigger press.
+                # This caused left_trigger(255) to fire constantly → Alt+Tab.
+                # New: read byte 27 only, default to neutral (0).
+                trigger_byte = data[27]
+                if trigger_byte & 0x40:
+                    st['t1'] = 32767    # Wheel/switch one direction → right trigger
+                elif trigger_byte & 0x20:
+                    st['t1'] = -32767   # Wheel/switch other direction → left trigger
+                else:
+                    st['t1'] = 0        # Neutral → no trigger input
+
+                if args.debug:
+                    active = []
+                    if st['b1']: active.append('b1->A')
+                    if st['b2']: active.append('b2->B')
+                    if st['b3']: active.append('b3->X')
+                    if st['b4']: active.append('b4->Y')
+                    if st['t1'] > 0: active.append('RT')
+                    if st['t1'] < 0: active.append('LT')
+                    if active:
+                        print(f'[DEBUG]   Active inputs: {", ".join(active)}')
 
 except serial.SerialException as e:
     print('\n\nCould not read/write:', e)
